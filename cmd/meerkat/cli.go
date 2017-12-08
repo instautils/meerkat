@@ -189,7 +189,7 @@ func New() (*Meerkat, error) {
 }
 
 func (m *Meerkat) sendToTelegram(to int, message string) error {
-	url := fmt.Sprintf("https://api.telegram.com/bot%s/sendMessage?chat_id=%d&text=%s", m.TelegramToken, to, message)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage?chat_id=%d&text=%s", m.TelegramToken, to, message)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
