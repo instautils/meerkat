@@ -1,0 +1,11 @@
+hash: 1a63a72653ca28f08461f586e367070567d2be3be5926d9ac4ad4a6ed6defd97
+updated: 2017-12-08T20:32:56.484945027+03:30
+imports:
+- name: github.com/ahmdrz/goinsta
+  version: 5f6c22a03adcc575b35f7579e16eb7cd68e25eed
+  subpackages:
+  - response
+  - uuid
+- name: gopkg.in/yaml.v2
+  version: 287cf08546ab5e7e37d55a84f7ed3fd1db036de5
+testImports: []

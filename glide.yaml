@@ -1,0 +1,4 @@
+package: github.com/ahmdrz/meerkat
+import:
+- package: gopkg.in/yaml.v2
+- package: github.com/ahmdrz/goinsta
