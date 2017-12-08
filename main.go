@@ -61,13 +61,13 @@ func main() {
 func run() {
 	m, err := meerkat.New()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] %s", err.Error())
+		fmt.Fprintf(os.Stderr, "[ERROR] %s\n", err.Error())
 		os.Exit(1)
 	}
 
 	err = m.Run()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] %s", err.Error())
+		fmt.Fprintf(os.Stderr, "[ERROR] %s\n", err.Error())
 		return
 	}
 

@@ -104,14 +104,11 @@ func (m *Meerkat) Run() error {
 	var exitErr error
 
 	for failure != 3 {
+		m.logger.Println("sending request to get following activities")
+
 		resp, err := m.instagram.GetFollowingRecentActivity()
 		if err != nil {
-			failure++
-			exitErr = err
-			continue
-		}
-
-		if resp.Status != "ok" {
+			m.logger.Println("Error", err)
 			failure++
 			exitErr = err
 			continue
@@ -212,8 +209,6 @@ func (m *Meerkat) sendToTelegram(to int, message string) error {
 	var output struct {
 		Status string `json:"string"`
 	}
-
-	m.logger.Println(string(bytes))
 
 	json.Unmarshal(bytes, &output)
 
