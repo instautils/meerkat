@@ -18,6 +18,7 @@ import (
 
 type Meerkat struct {
 	Interval    int
+	SleepTime   int
 	Username    string
 	Password    string
 	TargetUsers []string
@@ -29,8 +30,15 @@ type Meerkat struct {
 	instagram     *goinsta.Instagram
 	logger        *log.Logger
 	lastTimeStamp int
-	targetUsers   map[int64]string
+	targetUsers   map[int64]User
 	login         bool
+}
+
+type User struct {
+	Username  string
+	Bio       string
+	Followers int
+	Following int
 }
 
 func (m *Meerkat) parseArgs() error {
@@ -93,7 +101,12 @@ func (m *Meerkat) Run() error {
 		if err != nil {
 			return err
 		}
-		m.targetUsers[user.User.ID] = username
+		m.targetUsers[user.User.ID] = User{
+			Username:  username,
+			Followers: user.User.FollowerCount,
+			Following: user.User.FollowingCount,
+			Bio:       user.User.Biography,
+		}
 
 		m.logger.Printf("user %s-%d information has been retrived successfully.", username, user.User.ID)
 	}
@@ -127,10 +140,10 @@ func (m *Meerkat) Run() error {
 				if link.Type == "user" {
 					userID, _ := strconv.ParseInt(link.ID, 10, 64)
 
-					if username, ok := m.targetUsers[userID]; ok {
+					if user, ok := m.targetUsers[userID]; ok {
 						unixTime := time.Unix(int64(unixTimeStamp), 0)
 
-						message := fmt.Sprintf("Username: %s , Time: %s , StoryType: %d , Text : %s\n", username, unixTime.Format("15:04:05"), story.Type, story.Args.Text)
+						message := fmt.Sprintf("Username: %s , Time: %s , StoryType: %d , Text : %s\n", user.Username, unixTime.Format("15:04:05"), story.Type, story.Args.Text)
 
 						// TODO: parse to array of string and search over it.
 						if strings.Contains(m.OutputType, "telegram") {
@@ -149,6 +162,54 @@ func (m *Meerkat) Run() error {
 		}
 		if maxTimeStamp != 0 {
 			m.lastTimeStamp = maxTimeStamp
+		}
+
+		for _, username := range m.TargetUsers {
+			m.logger.Printf("getting %s information ", username)
+
+			user, err := m.instagram.GetUserByUsername(username)
+			if err != nil {
+				m.logger.Println("Error", err)
+				failure++
+				exitErr = err
+				continue
+			}
+			tmpUser := m.targetUsers[user.User.ID]
+			currentTime := time.Now().Format("15:04:05")
+
+			message := ""
+			if user.User.Biography != tmpUser.Bio {
+				message += fmt.Sprintf("user %s biography changed to %s\n", username, user.User.Biography)
+
+				tmpUser.Bio = user.User.Biography
+			}
+			if user.User.FollowerCount != tmpUser.Followers {
+				message += fmt.Sprintf("user %s followers changed from %d to %d\n", username, tmpUser.Followers, user.User.FollowerCount)
+
+				tmpUser.Followers = user.User.FollowerCount
+			}
+			if user.User.FollowingCount != tmpUser.Following {
+				message += fmt.Sprintf("user %s following changed from %d to %d\n", username, tmpUser.Following, user.User.FollowingCount)
+
+				tmpUser.Following = user.User.FollowingCount
+			}
+
+			if message != "" {
+				m.targetUsers[user.User.ID] = tmpUser
+
+				message += fmt.Sprintf("meerkat , time is : %s", currentTime)
+				// TODO: parse to array of string and search over it.
+				if strings.Contains(m.OutputType, "telegram") {
+					m.sendToTelegram(m.TelegramUser, message)
+				}
+				if strings.Contains(m.OutputType, "logfile") {
+					m.logger.Println(message)
+				}
+			}
+
+			m.logger.Printf("user %s information has been updated successfully.", username)
+
+			time.Sleep(time.Duration(m.SleepTime) * time.Second)
 		}
 
 		failure = 0
@@ -171,7 +232,7 @@ func (m *Meerkat) Logout() error {
 
 func New() (*Meerkat, error) {
 	m := &Meerkat{}
-	m.targetUsers = make(map[int64]string)
+	m.targetUsers = make(map[int64]User)
 
 	if err := m.parseArgs(); err != nil {
 		return nil, err
@@ -183,6 +244,14 @@ func New() (*Meerkat, error) {
 
 	if m.OutputType == "" {
 		return nil, fmt.Errorf("Fill outputtype with ['logfile', 'telegram']")
+	}
+
+	if m.Interval < 10 {
+		log.Println("Interval is low, try more than 10 seconds.")
+	}
+
+	if m.SleepTime < 10 {
+		log.Println("SleepTime is low, try more than 10 seconds.")
 	}
 
 	return m, nil
@@ -207,10 +276,15 @@ func (m *Meerkat) sendToTelegram(to int, message string) error {
 	defer resp.Body.Close()
 
 	var output struct {
-		Status string `json:"string"`
+		Ok          bool   `json:"ok"`
+		Description string `json:"description"`
 	}
 
 	json.Unmarshal(bytes, &output)
+
+	if !output.Ok {
+		return fmt.Errorf("Telegram bot %s", output.Description)
+	}
 
 	return nil
 }
