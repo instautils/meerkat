@@ -39,6 +39,8 @@ type User struct {
 	Bio       string
 	Followers int
 	Following int
+	Posts     int
+	Tags      int
 }
 
 func (m *Meerkat) parseArgs() error {
@@ -106,6 +108,8 @@ func (m *Meerkat) Run() error {
 			Followers: user.User.FollowerCount,
 			Following: user.User.FollowingCount,
 			Bio:       user.User.Biography,
+			Posts:     user.User.MediaCount,
+			Tags:      user.User.UserTagsCount,
 		}
 
 		m.logger.Printf("user %s-%d information has been retrived successfully.", username, user.User.ID)
@@ -192,6 +196,16 @@ func (m *Meerkat) Run() error {
 				message += fmt.Sprintf("user %s following changed from %d to %d\n", username, tmpUser.Following, user.User.FollowingCount)
 
 				tmpUser.Following = user.User.FollowingCount
+			}
+			if user.User.FollowingCount != tmpUser.Following {
+				message += fmt.Sprintf("user %s posts changed from %d to %d\n", username, tmpUser.Posts, user.User.MediaCount)
+
+				tmpUser.Posts = user.User.MediaCount
+			}
+			if user.User.UserTagsCount != tmpUser.Tags {
+				message += fmt.Sprintf("user %s tags changed from %d to %d\n", username, tmpUser.Tags, user.User.UserTagsCount)
+
+				tmpUser.Tags = user.User.UserTagsCount
 			}
 
 			if message != "" {

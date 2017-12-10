@@ -3,6 +3,10 @@ Watch your following activities on Instagram.
 
 <img align="center" src="https://github.com/ahmdrz/meerkat/blob/master/resources/meerkat.jpg" alt="meerkat github">
 
+## Meerkat
+
+With `meerkat` you can see users activities on Instagram , Such as like a comment , like a media , Or start following another user , Notify when new post shared on profile and many other activities.
+
 ## How to use ?
 
 First of all , download meerkat from released binaries or using `go get` command.
@@ -11,13 +15,9 @@ First of all , download meerkat from released binaries or using `go get` command
     go get -u github.com/ahmdrz/meerkat
 ```
 
-Now we have to make `meerkat.yaml` for meerkat configurations. with
+Be sure about `$GOPATH/bin` in `$PATH` on the linux OS , For windows check `path` in `environment variables`.
 
-```
-    meerkat init
-```
-
-we can create default `meerkat` configuration file.
+Now we have to make `meerkat.yaml` for meerkat configurations. with `meerkat init` we can create default `meerkat` configuration file.
 
 It's time to change default variable such as `username` and `password` of your Instagram account.
 
