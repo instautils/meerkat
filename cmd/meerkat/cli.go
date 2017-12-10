@@ -16,6 +16,11 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return os.IsExist(err)
+}
+
 type Meerkat struct {
 	Interval    int
 	SleepTime   int
@@ -32,6 +37,7 @@ type Meerkat struct {
 	lastTimeStamp int
 	targetUsers   map[int64]User
 	login         bool
+	loggerFile    *os.File
 }
 
 type User struct {
@@ -44,6 +50,28 @@ type User struct {
 }
 
 func (m *Meerkat) parseArgs() error {
+	if len(os.Args) > 1 {
+		// meerkat init
+		// meerkat init config.yaml
+		if os.Args[1] == "init" {
+			configFile := "meerkat.yaml"
+			if len(os.Args) > 2 {
+				configFile = os.Args[2]
+			}
+			file, err := os.OpenFile(configFile, os.O_CREATE|os.O_WRONLY, 0666)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+			file.WriteString(configTemplate)
+			file.Close()
+
+			fmt.Println(configFile, "generated.")
+
+			os.Exit(0)
+		}
+	}
+
 	configFile := "meerkat.yaml"
 
 	outputPtr := flag.String("output", "", "Log output file.")
@@ -54,10 +82,11 @@ func (m *Meerkat) parseArgs() error {
 	if *outputPtr == "" {
 		m.logger = log.New(os.Stdout, "[meerkat] ", log.Ldate|log.Ltime)
 	} else {
-		file, err := os.Open(*outputPtr)
+		file, err := os.OpenFile(*outputPtr, os.O_CREATE|os.O_WRONLY, 0666)
 		if err != nil {
 			return fmt.Errorf("output file [%s] does not exists", *outputPtr)
 		}
+		m.loggerFile = file
 		m.logger = log.New(file, "[meerkat] ", log.Ldate|log.Ltime)
 	}
 
@@ -83,8 +112,8 @@ func (m *Meerkat) parseArgs() error {
 	return nil
 }
 
-func (m *Meerkat) Run() error {
-	m.logger.Println("logging in to the Instagram")
+func (m *Meerkat) Run(done chan bool) error {
+	m.logger.Println("Logging in to the Instagram")
 
 	m.instagram = goinsta.New(m.Username, m.Password)
 	err := m.instagram.Login()
@@ -92,142 +121,154 @@ func (m *Meerkat) Run() error {
 		return fmt.Errorf("Instagram error , %s", err.Error())
 	}
 	m.login = true
-	defer m.instagram.Logout()
 
-	m.logger.Println("successfully logged in")
+	m.logger.Println("Successfully logged in")
 
-	for _, username := range m.TargetUsers {
-		m.logger.Printf("getting %s information ", username)
+	select {
+	case <-done:
+		return fmt.Errorf("Signal on meerkat !")
+	default:
+		for _, username := range m.TargetUsers {
+			m.logger.Printf("Getting %s information ", username)
 
-		user, err := m.instagram.GetUserByUsername(username)
-		if err != nil {
-			return err
+			user, err := m.instagram.GetUserByUsername(username)
+			if err != nil {
+				return err
+			}
+			m.targetUsers[user.User.ID] = User{
+				Username:  username,
+				Followers: user.User.FollowerCount,
+				Following: user.User.FollowingCount,
+				Bio:       user.User.Biography,
+				Posts:     user.User.MediaCount,
+				Tags:      user.User.UserTagsCount,
+			}
+
+			m.logger.Printf("User %s-%d information has been retrived successfully.", username, user.User.ID)
 		}
-		m.targetUsers[user.User.ID] = User{
-			Username:  username,
-			Followers: user.User.FollowerCount,
-			Following: user.User.FollowingCount,
-			Bio:       user.User.Biography,
-			Posts:     user.User.MediaCount,
-			Tags:      user.User.UserTagsCount,
-		}
-
-		m.logger.Printf("user %s-%d information has been retrived successfully.", username, user.User.ID)
 	}
 
-	m.logger.Println("starting watcher ...")
+	m.logger.Println("Starting watcher ...")
 
 	var failure int = 0
 	var exitErr error
 
+	tick := time.After(time.Duration(m.Interval) * time.Second)
+
 	for failure != 3 {
-		m.logger.Println("sending request to get following activities")
+		select {
+		case <-done:
+			return fmt.Errorf("Signal on meerkat !")
+		case <-tick:
+			tick = time.After(time.Duration(m.Interval) * time.Second)
 
-		resp, err := m.instagram.GetFollowingRecentActivity()
-		if err != nil {
-			m.logger.Println("Error", err)
-			failure++
-			exitErr = err
-			continue
-		}
+			m.logger.Println("Sending request to get following activities")
 
-		// to find last time stamp
-		maxTimeStamp := int(0)
-		for _, story := range resp.Stories {
-			unixTimeStamp := story.Args.Timestamp
-
-			if unixTimeStamp <= m.lastTimeStamp {
-				continue
-			}
-
-			for _, link := range story.Args.Links {
-				if link.Type == "user" {
-					userID, _ := strconv.ParseInt(link.ID, 10, 64)
-
-					if user, ok := m.targetUsers[userID]; ok {
-						unixTime := time.Unix(int64(unixTimeStamp), 0)
-
-						message := fmt.Sprintf("Username: %s , Time: %s , StoryType: %d , Text : %s\n", user.Username, unixTime.Format("15:04:05"), story.Type, story.Args.Text)
-
-						// TODO: parse to array of string and search over it.
-						if strings.Contains(m.OutputType, "telegram") {
-							m.sendToTelegram(m.TelegramUser, message)
-						}
-						if strings.Contains(m.OutputType, "logfile") {
-							m.logger.Println(message)
-						}
-					}
-				}
-			}
-
-			if unixTimeStamp > maxTimeStamp {
-				maxTimeStamp = unixTimeStamp
-			}
-		}
-		if maxTimeStamp != 0 {
-			m.lastTimeStamp = maxTimeStamp
-		}
-
-		for _, username := range m.TargetUsers {
-			m.logger.Printf("getting %s information ", username)
-
-			user, err := m.instagram.GetUserByUsername(username)
+			resp, err := m.instagram.GetFollowingRecentActivity()
 			if err != nil {
 				m.logger.Println("Error", err)
 				failure++
 				exitErr = err
 				continue
 			}
-			tmpUser := m.targetUsers[user.User.ID]
-			currentTime := time.Now().Format("15:04:05")
 
-			message := ""
-			if user.User.Biography != tmpUser.Bio {
-				message += fmt.Sprintf("user %s biography changed to %s\n", username, user.User.Biography)
+			// to find last time stamp
+			maxTimeStamp := int(0)
+			for _, story := range resp.Stories {
+				unixTimeStamp := story.Args.Timestamp
 
-				tmpUser.Bio = user.User.Biography
-			}
-			if user.User.FollowerCount != tmpUser.Followers {
-				message += fmt.Sprintf("user %s followers changed from %d to %d\n", username, tmpUser.Followers, user.User.FollowerCount)
-
-				tmpUser.Followers = user.User.FollowerCount
-			}
-			if user.User.FollowingCount != tmpUser.Following {
-				message += fmt.Sprintf("user %s following changed from %d to %d\n", username, tmpUser.Following, user.User.FollowingCount)
-
-				tmpUser.Following = user.User.FollowingCount
-			}
-			if user.User.FollowingCount != tmpUser.Following {
-				message += fmt.Sprintf("user %s posts changed from %d to %d\n", username, tmpUser.Posts, user.User.MediaCount)
-
-				tmpUser.Posts = user.User.MediaCount
-			}
-			if user.User.UserTagsCount != tmpUser.Tags {
-				message += fmt.Sprintf("user %s tags changed from %d to %d\n", username, tmpUser.Tags, user.User.UserTagsCount)
-
-				tmpUser.Tags = user.User.UserTagsCount
-			}
-
-			if message != "" {
-				m.targetUsers[user.User.ID] = tmpUser
-
-				message += fmt.Sprintf("meerkat , time is : %s", currentTime)
-				// TODO: parse to array of string and search over it.
-				if strings.Contains(m.OutputType, "telegram") {
-					m.sendToTelegram(m.TelegramUser, message)
+				if unixTimeStamp <= m.lastTimeStamp {
+					continue
 				}
-				if strings.Contains(m.OutputType, "logfile") {
-					m.logger.Println(message)
+
+				for _, link := range story.Args.Links {
+					if link.Type == "user" {
+						userID, _ := strconv.ParseInt(link.ID, 10, 64)
+
+						if user, ok := m.targetUsers[userID]; ok {
+							unixTime := time.Unix(int64(unixTimeStamp), 0)
+
+							message := fmt.Sprintf("Username: %s , Time: %s , StoryType: %d , Text : %s\n", user.Username, unixTime.Format("15:04:05"), story.Type, story.Args.Text)
+
+							// TODO: parse to array of string and search over it.
+							if strings.Contains(m.OutputType, "telegram") {
+								m.sendToTelegram(m.TelegramUser, message)
+							}
+							if strings.Contains(m.OutputType, "logfile") {
+								m.logger.Println(message)
+							}
+						}
+					}
+				}
+
+				if unixTimeStamp > maxTimeStamp {
+					maxTimeStamp = unixTimeStamp
 				}
 			}
+			if maxTimeStamp != 0 {
+				m.lastTimeStamp = maxTimeStamp
+			}
 
-			m.logger.Printf("user %s information has been updated successfully.", username)
+			failure = 0
 
-			time.Sleep(time.Duration(m.SleepTime) * time.Second)
+			for _, username := range m.TargetUsers {
+				m.logger.Printf("Getting %s information ", username)
+
+				user, err := m.instagram.GetUserByUsername(username)
+				if err != nil {
+					m.logger.Println("Error", err)
+					failure++
+					exitErr = err
+					continue
+				}
+				tmpUser := m.targetUsers[user.User.ID]
+				currentTime := time.Now().Format("15:04:05")
+
+				message := ""
+				if user.User.Biography != tmpUser.Bio {
+					message += fmt.Sprintf("User %s biography changed to %s\n", username, user.User.Biography)
+
+					tmpUser.Bio = user.User.Biography
+				}
+				if user.User.FollowerCount != tmpUser.Followers {
+					message += fmt.Sprintf("User %s followers changed from %d to %d\n", username, tmpUser.Followers, user.User.FollowerCount)
+
+					tmpUser.Followers = user.User.FollowerCount
+				}
+				if user.User.FollowingCount != tmpUser.Following {
+					message += fmt.Sprintf("User %s following changed from %d to %d\n", username, tmpUser.Following, user.User.FollowingCount)
+
+					tmpUser.Following = user.User.FollowingCount
+				}
+				if user.User.FollowingCount != tmpUser.Following {
+					message += fmt.Sprintf("User %s posts changed from %d to %d\n", username, tmpUser.Posts, user.User.MediaCount)
+
+					tmpUser.Posts = user.User.MediaCount
+				}
+				if user.User.UserTagsCount != tmpUser.Tags {
+					message += fmt.Sprintf("User %s tags changed from %d to %d\n", username, tmpUser.Tags, user.User.UserTagsCount)
+
+					tmpUser.Tags = user.User.UserTagsCount
+				}
+
+				if message != "" {
+					m.targetUsers[user.User.ID] = tmpUser
+
+					message += fmt.Sprintf("Meerkat , time is : %s", currentTime)
+					// TODO: parse to array of string and search over it.
+					if strings.Contains(m.OutputType, "telegram") {
+						m.sendToTelegram(m.TelegramUser, message)
+					}
+					if strings.Contains(m.OutputType, "logfile") {
+						m.logger.Println(message)
+					}
+				}
+
+				m.logger.Printf("User %s information has been updated successfully.", username)
+
+				time.Sleep(time.Duration(m.SleepTime) * time.Second)
+			}
 		}
-
-		failure = 0
-		time.Sleep(time.Duration(m.Interval) * time.Second)
 	}
 
 	if failure == 3 {
@@ -241,12 +282,16 @@ func (m *Meerkat) Logout() error {
 	if m.login {
 		return m.instagram.Logout()
 	}
+	if m.loggerFile != nil {
+		return m.loggerFile.Close()
+	}
 	return nil
 }
 
 func New() (*Meerkat, error) {
 	m := &Meerkat{}
 	m.targetUsers = make(map[int64]User)
+	m.loggerFile = nil
 
 	if err := m.parseArgs(); err != nil {
 		return nil, err
