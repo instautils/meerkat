@@ -153,6 +153,7 @@ func (m *Meerkat) Run(done chan bool) error {
 	var failure int = 0
 	var exitErr error
 
+	// TODO : make select statement better !
 	tick := time.After(time.Duration(m.Interval) * time.Second)
 
 	for failure != 3 {
@@ -188,7 +189,7 @@ func (m *Meerkat) Run(done chan bool) error {
 						if user, ok := m.targetUsers[userID]; ok {
 							unixTime := time.Unix(int64(unixTimeStamp), 0)
 
-							message := fmt.Sprintf("Username: %s , Time: %s , StoryType: %d , Text : %s\n", user.Username, unixTime.Format("15:04:05"), story.Type, story.Args.Text)
+							message := fmt.Sprintf("[%s] [%s] %s\n", user.Username, unixTime.Format("15:04:05"), story.Args.Text)
 
 							// TODO: parse to array of string and search over it.
 							if strings.Contains(m.OutputType, "telegram") {
@@ -224,37 +225,42 @@ func (m *Meerkat) Run(done chan bool) error {
 				tmpUser := m.targetUsers[user.User.ID]
 				currentTime := time.Now().Format("15:04:05")
 
-				message := ""
+				messages := make([]string, 0)
 				if user.User.Biography != tmpUser.Bio {
-					message += fmt.Sprintf("User %s biography changed to %s\n", username, user.User.Biography)
+					messages = append(messages, fmt.Sprintf("User %s biography changed to %s\n", username, user.User.Biography))
 
 					tmpUser.Bio = user.User.Biography
 				}
 				if user.User.FollowerCount != tmpUser.Followers {
-					message += fmt.Sprintf("User %s followers changed from %d to %d\n", username, tmpUser.Followers, user.User.FollowerCount)
+					messages = append(messages, fmt.Sprintf("User %s followers changed from %d to %d\n", username, tmpUser.Followers, user.User.FollowerCount))
 
 					tmpUser.Followers = user.User.FollowerCount
 				}
 				if user.User.FollowingCount != tmpUser.Following {
-					message += fmt.Sprintf("User %s following changed from %d to %d\n", username, tmpUser.Following, user.User.FollowingCount)
+					messages = append(messages, fmt.Sprintf("User %s following changed from %d to %d\n", username, tmpUser.Following, user.User.FollowingCount))
 
 					tmpUser.Following = user.User.FollowingCount
 				}
 				if user.User.FollowingCount != tmpUser.Following {
-					message += fmt.Sprintf("User %s posts changed from %d to %d\n", username, tmpUser.Posts, user.User.MediaCount)
+					messages = append(messages, fmt.Sprintf("User %s posts changed from %d to %d\n", username, tmpUser.Posts, user.User.MediaCount))
 
 					tmpUser.Posts = user.User.MediaCount
 				}
 				if user.User.UserTagsCount != tmpUser.Tags {
-					message += fmt.Sprintf("User %s tags changed from %d to %d\n", username, tmpUser.Tags, user.User.UserTagsCount)
+					messages = append(messages, fmt.Sprintf("User %s tags changed from %d to %d\n", username, tmpUser.Tags, user.User.UserTagsCount))
 
 					tmpUser.Tags = user.User.UserTagsCount
 				}
 
-				if message != "" {
+				if len(messages) > 0 {
 					m.targetUsers[user.User.ID] = tmpUser
 
-					message += fmt.Sprintf("Meerkat , time is : %s", currentTime)
+					message := fmt.Sprintf("[%s] [%s] : \n", username, currentTime)
+
+					for _, tmpMessage := range messages {
+						message += tmpMessage
+					}
+
 					// TODO: parse to array of string and search over it.
 					if strings.Contains(m.OutputType, "telegram") {
 						m.sendToTelegram(m.TelegramUser, message)
