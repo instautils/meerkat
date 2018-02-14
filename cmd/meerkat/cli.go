@@ -225,41 +225,42 @@ func (m *Meerkat) Run(done chan bool) error {
 				tmpUser := m.targetUsers[user.User.ID]
 				currentTime := time.Now().Format("15:04:05")
 
-				messages := make([]string, 0)
+				message := fmt.Sprintf("[%s] [%s] : \n", username, currentTime)
+				hasMessage := false
+
 				if user.User.Biography != tmpUser.Bio {
-					messages = append(messages, fmt.Sprintf("User %s biography changed to %s\n", username, user.User.Biography))
+					message += fmt.Sprintf("User %s biography changed to %s\n", username, user.User.Biography)
+					hasMessage = true
 
 					tmpUser.Bio = user.User.Biography
 				}
 				if user.User.FollowerCount != tmpUser.Followers {
-					messages = append(messages, fmt.Sprintf("User %s followers changed from %d to %d\n", username, tmpUser.Followers, user.User.FollowerCount))
+					message += fmt.Sprintf("User %s followers changed from %d to %d\n", username, tmpUser.Followers, user.User.FollowerCount)
+					hasMessage = true
 
 					tmpUser.Followers = user.User.FollowerCount
 				}
 				if user.User.FollowingCount != tmpUser.Following {
-					messages = append(messages, fmt.Sprintf("User %s following changed from %d to %d\n", username, tmpUser.Following, user.User.FollowingCount))
+					message += fmt.Sprintf("User %s following changed from %d to %d\n", username, tmpUser.Following, user.User.FollowingCount)
+					hasMessage = true
 
 					tmpUser.Following = user.User.FollowingCount
 				}
 				if user.User.FollowingCount != tmpUser.Following {
-					messages = append(messages, fmt.Sprintf("User %s posts changed from %d to %d\n", username, tmpUser.Posts, user.User.MediaCount))
+					message += fmt.Sprintf("User %s posts changed from %d to %d\n", username, tmpUser.Posts, user.User.MediaCount)
+					hasMessage = true
 
 					tmpUser.Posts = user.User.MediaCount
 				}
 				if user.User.UserTagsCount != tmpUser.Tags {
-					messages = append(messages, fmt.Sprintf("User %s tags changed from %d to %d\n", username, tmpUser.Tags, user.User.UserTagsCount))
+					message += fmt.Sprintf("User %s tags changed from %d to %d\n", username, tmpUser.Tags, user.User.UserTagsCount)
+					hasMessage = true
 
 					tmpUser.Tags = user.User.UserTagsCount
 				}
 
-				if len(messages) > 0 {
+				if hasMessage {
 					m.targetUsers[user.User.ID] = tmpUser
-
-					message := fmt.Sprintf("[%s] [%s] : \n", username, currentTime)
-
-					for _, tmpMessage := range messages {
-						message += tmpMessage
-					}
 
 					// TODO: parse to array of string and search over it.
 					if strings.Contains(m.OutputType, "telegram") {
